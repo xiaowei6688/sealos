@@ -1,8 +1,6 @@
 *swp
 *rpmnew
-*retry
 *swo
-sealos
 .idea
 oss-config
 ossutil64
@@ -10,4 +8,11 @@ main.exe
 main
 dist
 .vscode
-test/Note.md
+scripts/release/Note.md
+.ossutil_checkpoint
+bin
+.run
+tools
+coverage.out
+tmp
+**/.DS_Store

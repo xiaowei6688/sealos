@@ -1,91 +1,146 @@
-COMMIT_SHA1 ?= $(shell git rev-parse --short HEAD || echo "0.0.0")
-BUILD_VERSION ?= $(shell cat version.txt || echo "local")
-BUILD_TIME ?= $(shell date "+%F %T")
+# Copyright © 2022 sealos.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-.PHONY: fmt vet lint default
-GO_RELEASE_TAGS := $(shell go list -f ':{{join (context.ReleaseTags) ":"}}:' runtime)
+# ==============================================================================
+# Build options
 
-# Only use the `-race` flag on newer versions of Go (version 1.3 and newer)
-ifeq (,$(findstring :go1.3:,$(GO_RELEASE_TAGS)))
-	RACE_FLAG :=
-else
-	RACE_FLAG := -race -cpu 1,2,4
-endif
+ROOT_PACKAGE=github.com/labring/sealos
+VERSION_PACKAGE=github.com/labring/sealos/pkg/version
 
-# Run `go vet` on Go 1.12 and newer. For Go 1.5-1.11, use `go tool vet`
-ifneq (,$(findstring :go1.12:,$(GO_RELEASE_TAGS)))
-	GO_VET := go vet \
-		-atomic \
-		-bool \
-		-copylocks \
-		-nilfunc \
-		-printf \
-		-rangeloops \
-		-unreachable \
-		-unsafeptr \
-		-unusedresult \
-		.
-else ifneq (,$(findstring :go1.5:,$(GO_RELEASE_TAGS)))
-	GO_VET := go tool vet \
-		-atomic \
-		-bool \
-		-copylocks \
-		-nilfunc \
-		-printf \
-		-shadow \
-		-rangeloops \
-		-unreachable \
-		-unsafeptr \
-		-unusedresult \
-		.
-else
-	GO_VET := @echo "go vet skipped -- not supported on this version of Go"
-endif
+# ==============================================================================
+# Includes
 
-fmt: ## fmt
+include scripts/make-rules/common.mk # must be the first to include
+include scripts/make-rules/golang.mk
+include scripts/make-rules/gen.mk
+include scripts/make-rules/license.mk
+include scripts/make-rules/tools.mk
 
-	@echo gofmt -l
-	@OUTPUT=`gofmt -l . 2>&1`; \
-	if [ "$$OUTPUT" ]; then \
-		echo "gofmt must be run on the following files:"; \
-        echo "$$OUTPUT"; \
-        exit 1; \
-    fi
+# ==============================================================================
+# Usage
 
-lint: ## lint
+define USAGE_OPTIONS
 
-	@echo golint ./...
-	@OUTPUT=`command -v golint >/dev/null 2>&1 && golint ./... 2>&1`; \
-	if [ "$$OUTPUT" ]; then \
-		echo "golint errors:"; \
-		echo "$$OUTPUT"; \
-		exit 1; \
-	fi
+Options:
+  DEBUG            Whether or not to generate debug symbols. Default is 0.
 
-vet: ## vet
-	$(GO_VET)
+  BINS             Binaries to build. Default is all binaries under cmd.
+                   This option is available when using: make {build/compress}(.multiarch)
+                   Example: make build BINS="sealos sealctl"
 
-default: fmt lint vet
+  PLATFORMS        Platform to build for. Default is linux_arm64 and linux_amd64.
+                   This option is available when using: make {build/compress}.multiarch
+                   Example: make build.multiarch PLATFORMS="linux_arm64 linux_amd64"
 
-local: clean ## 构建二进制
-	@echo "build bin ${BUILD_VERSION} ${BUILD_TIME} ${COMMIT_SHA1}"
-	# go get github.com/mitchellh/gox
-	# eg darwin/amd64 linux/amd64 windows/amd64
-	@gox -osarch="linux/amd64" \
-        -output="dist/{{.Dir}}_{{.OS}}_{{.Arch}}" \
-		-ldflags "-X 'github.com/fanux/sealos/version.Version=${BUILD_VERSION}' \
-				  -X 'github.com/fanux/sealos/version.Build=${COMMIT_SHA1}' \
-				  -X 'github.com/fanux/sealos/version.BuildTime=${BUILD_TIME}'"
+  V                Set to 1 enable verbose build. Default is 0.
+endef
+export USAGE_OPTIONS
 
-help: ## this help
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {sub("\\\\n",sprintf("\n%22c"," "), $$2);printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+# ==============================================================================
+# Targets
 
-clean: ## clean
-	rm -rf dist
+.DEFAULT_GOAL = build
 
-.EXPORT_ALL_VARIABLES:
+## build: Build source code for host platform.
+.PHONY: build
+build:
+	@$(MAKE) go.build
 
-GO111MODULE = on
+## build.multiarch: Build source code for multiple platforms. See option PLATFORMS.
+.PHONY: build.multiarch
+build.multiarch:
+	@$(MAKE) go.build.multiarch
 
-GOPROXY = https://goproxy.cn
-GOSUMDB = sum.golang.google.cn
+# ## image: Build docker images for host platform.
+# .PHONY: image
+# image:
+# 	@$(MAKE) image.build
+
+# ## image.multiarch: Build docker images for multiple platforms. See option PLATFORMS.
+# .PHONY: image.multiarch
+# image.multiarch:
+# 	@$(MAKE) image.build.multiarch
+
+# ## push: Push docker images for host platform to registry.
+# .PHONY: push
+# push:
+# 	@$(MAKE) image.push
+
+# ## push.multiarch: Push docker images for multiple platforms to registry. See option PLATFORMS.
+# .PHONY: push.multiarch
+# push.multiarch:
+# 	@$(MAKE) image.push.multiarch
+
+## lint: Check syntax and styling of go sources.
+.PHONY: lint
+lint:
+	@$(MAKE) go.lint
+
+## format: Gofmt (reformat) package sources.
+.PHONY: format
+format:
+	@$(MAKE) go.format
+
+## coverage: Run unit tests and output test coverage.
+.PHONY: coverage
+coverage:
+	@$(MAKE) go.coverage
+
+## compress: Compress the binaries using upx for host platform.
+.PHONY: compress
+compress:
+	@$(MAKE) go.compress
+
+## compress.multiarch: Compress the binaries using upx for multiple platforms. See option PLATFORMS.
+.PHONY: compress.multiarch
+compress.multiarch:
+	@$(MAKE) go.compress.multiarch
+
+## verify-license: Verify the license headers for all files.
+.PHONY: verify-license
+verify-license:
+	@$(MAKE) license.verify
+
+## add-license: Ensure source code files have license headers.
+.PHONY: add-license
+add-license:
+	@$(MAKE) license.add
+
+## gen: Generate all necessary files.
+.PHONY: gen
+gen:
+	@$(MAKE) gen.run
+
+## tools: Install dependent tools.
+.PHONY: tools
+tools:
+	@$(MAKE) tools.install
+
+## clean: Remove all files that are created by building.
+.PHONY: clean
+clean:
+	@echo "===========> Cleaning all build output"
+	@-rm -vrf $(OUTPUT_DIR) $(BIN_DIR)
+
+## update-contrib: Update list of contributors.
+.PHONY: update-contrib
+update-contrib:
+	@git log --format='%aN <%aE>' | sort -uf > CONTRIBUTORS
+
+## help: Show this help info.
+.PHONY: help
+help: Makefile
+	@echo -e "\nUsage: make <TARGETS> <OPTIONS> ...\n\nTargets:"
+	@sed -n 's/^##//p' $< | awk -F':' '{printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}' | sed -e 's/^/ /'
+	@echo "$$USAGE_OPTIONS"

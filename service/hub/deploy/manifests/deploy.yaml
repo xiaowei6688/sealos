@@ -1,0 +1,89 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app: hub-service
+  name: hub-service-system
+---
+apiVersion: v1
+data:
+  config.yml: |
+    server:
+      addr: ":5001"
+    token:
+      issuer: "registry-token-issuer"
+      expiration: 2592000  #30days
+      certificate: "/config/tls.crt"
+      key: "/config/tls.key"
+  tls.crt: |
+    -----BEGIN CERTIFICATE-----
+    -----END CERTIFICATE-----
+  tls.key: |
+    -----BEGIN RSA PRIVATE KEY-----
+    -----END RSA PRIVATE KEY-----
+kind: ConfigMap
+metadata:
+  labels:
+    app: hub-service
+  name: hub-service-config
+  namespace: hub-service-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hub-service-deployment
+  namespace: hub-service-system
+  labels:
+    app: hub-service
+spec:
+  selector:
+    matchLabels:
+      app: hub-service
+  replicas: 1
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: hub-service
+    spec:
+      volumes:
+        - name: config-vol
+          configMap:
+            name: hub-service-config
+        - name: cert-vol
+      containers:
+        - name: hub-service-server
+          image: lingdie/sealos-hub-service:dev
+          ports:
+            - containerPort: 5001
+          args:
+          - /config/config.yml
+          command:
+            - /manager
+          securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                  - ALL
+              runAsNonRoot: true
+          imagePullPolicy: Always
+          volumeMounts:
+            - name: config-vol
+              mountPath: /config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: hub-service
+  name: hub-service-manager
+  namespace: hub-service-system
+spec:
+  ports:
+    - name: http
+      port: 5001
+      protocol: TCP
+      targetPort: 5001
+  selector:
+    app: hub-service

@@ -1,19 +1,31 @@
-FROM  golang:1.15.2-alpine AS builder
+# Copyright © 2022 sealos.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-ENV GO111MODULE=on
-ENV GOPROXY=https://goproxy.io
+FROM --platform=$BUILDPLATFORM golang:1-bullseye as builder
+ARG GITHUB_TOKEN=$GITHUB_TOKEN
+ARG TARGETARCH
+ARG ACTION=build-pack
 
-WORKDIR /root
-
-COPY . .
-RUN go mod download
-
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build  -o /sealos -ldflags "-s -w -X github.com/fanux/sealos/version.Version=latest  -X github.com/fanux/sealos/version.Build= -X github.com/fanux/sealos/version.BuildTime=" main.go
-
-FROM alpine AS UPX
-COPY --from=builder /sealos /sealos
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories && \
-	apk add --update upx && upx /sealos
-FROM alpine
-COPY --from=UPX /sealos /bin/sealos
-ENTRYPOINT ["/bin/sealos"]
+WORKDIR /work
+COPY . /work
+# in china using this
+# RUN mv /work/.github/sources.list /etc/apt
+RUN dpkg --add-architecture arm64 &&  \
+      apt update &&  \
+      apt install -y gcc-aarch64-linux-gnu && \
+      apt install -y libbtrfs-dev btrfs-tools && \
+      apt install -y libgpgme-dev libdevmapper-dev && \
+      apt install -y libbtrfs-dev:arm64 btrfs-tools:arm64 && \
+      apt install -y libgpgme-dev:arm64 libdevmapper-dev:arm64 && \
+      make ${ACTION}
